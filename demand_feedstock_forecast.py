@@ -88,28 +88,29 @@ def avg_pack_kwh(year: int) -> float:
 
 
 # ── Mineral intensities (kg per kWh of battery capacity) ─────────────────────
-# Source: IEA Critical Minerals (2021) Annex; Argonne BatPaC ANL-20/55.
+# Source: Olivetti et al. 2017, Stochiometry for LFP. 
 # NMC = NMC 811 (dominant US variant; slightly overstates Ni, understates Co
 #   vs a true NMC blend — acceptable given broader uncertainty).
 # "Other" category uses a simple average of NMC811 and LFP as a placeholder.
+
 MINERAL_INTENSITY = {
-    #          Li      Ni      Co      Mn      Fe      Phosphate  Graphite
-    "NMC":  {"Li": 0.16, "Ni": 0.67, "Co": 0.08, "Mn": 0.05,
-             "Fe": 0.00, "P":  0.00, "Graphite": 0.55},
-    "NCA":  {"Li": 0.17, "Ni": 0.66, "Co": 0.10, "Mn": 0.00,
-             "Fe": 0.00, "P":  0.00, "Graphite": 0.55},
-    "LFP":  {"Li": 0.17, "Ni": 0.00, "Co": 0.00, "Mn": 0.00,
-             "Fe": 0.32, "P":  0.57, "Graphite": 0.55},
-    "Other":{"Li": 0.17, "Ni": 0.33, "Co": 0.04, "Mn": 0.02,
-             "Fe": 0.16, "P":  0.28, "Graphite": 0.55},
+    #         Li      Ni      Co      Mn      Fe      P       
+    "NMC": {"Li": 0.111, "Ni": 0.750, "Co": 0.094, "Mn": 0.088,
+            "Fe": 0.000, "P":  0.000},
+    "NCA": {"Li": 0.112, "Ni": 0.759, "Co": 0.143, "Mn": 0.000,
+            "Fe": 0.000, "P":  0.000},
+    "LFP": {"Li": 0.090, "Ni": 0.000, "Co": 0.000, "Mn": 0.000,
+            "Fe": 0.723, "P":  0.401},
+    "Other":{"Li": 0.101, "Ni": 0.375, "Co": 0.047, "Mn": 0.044,
+             "Fe": 0.361, "P":  0.200},
 }
-MINERALS = ["Li", "Ni", "Co", "Mn", "Fe", "P", "Graphite"]
+MINERALS = ["Li", "Ni", "Co", "Mn", "Fe", "P"]
 CHEMISTRIES = ["NMC", "NCA", "LFP", "Other"]
 
 # ── Colours ────────────────────────────────────────────────────────────────────
 MINERAL_COLORS = {
     "Li": "#185FA5", "Ni": "#BA7517", "Co": "#3B6D11",
-    "Mn": "#7B4F9E", "Fe": "#888780", "P": "#C94040", "Graphite": "#2C2C2A",
+    "Mn": "#7B4F9E", "Fe": "#888780", "P": "#C94040",
 }
 
 
@@ -304,9 +305,9 @@ def plot_results(df: pd.DataFrame, ev_scenario: str, chem_scenario: str,
     fmt_millions(ax)
     ax.grid(axis="y", linestyle="--", alpha=0.4)
 
-    # Panel 2: Key mineral demand (Li, Ni, Co, Graphite) — stacked
+    # Panel 2: Key mineral demand (Li, Ni, Co) — stacked
     ax = axes[0, 1]
-    highlight = ["Li", "Ni", "Co", "Graphite"]
+    highlight = ["Li", "Ni", "Co"]
     bottom = np.zeros(len(years))
     for m in highlight:
         vals = df[f"demand_kg_{m}"].values / 1e6  # → thousand tonnes
