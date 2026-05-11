@@ -95,17 +95,13 @@ def avg_pack_kwh(year: int) -> float:
 
 MINERAL_INTENSITY = {
     #         Li      Ni      Co      Mn      Fe      P       
-    "NMC": {"Li": 0.111, "Ni": 0.750, "Co": 0.094, "Mn": 0.088,
-            "Fe": 0.000, "P":  0.000},
-    "NCA": {"Li": 0.112, "Ni": 0.759, "Co": 0.143, "Mn": 0.000,
+    "High-Nickel": {"Li": 0.111, "Ni": 0.750, "Co": 0.094, "Mn": 0.088,
             "Fe": 0.000, "P":  0.000},
     "LFP": {"Li": 0.090, "Ni": 0.000, "Co": 0.000, "Mn": 0.000,
-            "Fe": 0.723, "P":  0.401},
-    "Other":{"Li": 0.101, "Ni": 0.375, "Co": 0.047, "Mn": 0.044,
-             "Fe": 0.361, "P":  0.200},
+            "Fe": 0.723, "P":  0.401}
 }
 MINERALS = ["Li", "Ni", "Co", "Mn", "Fe", "P"]
-CHEMISTRIES = ["NMC", "NCA", "LFP", "Other"]
+CHEMISTRIES = ["High-Nickel", "LFP"]
 
 # ── Colours ────────────────────────────────────────────────────────────────────
 MINERAL_COLORS = {
@@ -321,14 +317,14 @@ def plot_results(df: pd.DataFrame, ev_scenario: str, chem_scenario: str,
 
     # Panel 3: Demand vs feedstock for Li and Ni (most policy-relevant)
     ax = axes[1, 0]
-    for m, ls in [("Li", "-"), ("Ni", "--")]:
+    for m, ls in [("Li", "-"), ("Ni", "-"), ("Co", "-")]:
         demand   = df[f"demand_kg_{m}"].values / 1e6
         feedstk  = df[f"feedstock_kg_{m}"].values / 1e6
         ax.plot(years, demand,  color=MINERAL_COLORS[m], lw=2, ls=ls,
                 label=f"{m} demand")
         ax.plot(years, feedstk, color=MINERAL_COLORS[m], lw=1.5, ls=":",
                 alpha=0.7, label=f"{m} feedstock")
-    ax.set_title("Demand vs. Recycling Feedstock\n(Li and Ni; dotted = feedstock)")
+    ax.set_title("Demand vs. Recycling Feedstock\n(Li, Ni, Co; dotted = feedstock)")
     ax.set_ylabel("Thousand tonnes")
     ax.legend(fontsize=9)
     ax.grid(axis="y", linestyle="--", alpha=0.4)

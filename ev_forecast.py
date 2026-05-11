@@ -1,17 +1,37 @@
-'''
-This file takes in as input CSVs from the Alternative Fuels Data Center (afdc.gov). Data from selected papers (____insert here___)
-is used to fit a logistic growth curve for EV adoption. We have various adoption scenarios which are taken from these papers. 
-
-The output is a CSV for each adoption scenario that has each state as a row and each year as a column. 
-Code was written by Claude. Modifications to ensure accuracy to paper results were not made by Claude. 
-'''
-
-
+"""
+EV Registration Forecasting — Logistic S-Curve Model
+=====================================================
+Fits a logistic growth curve to historical EV registration data by state
+and projects forward under three carrying-capacity (K) scenarios.
+ 
+Inputs:
+    ev_registrations.csv          — required; rows=states, columns=years + "State"
+                                    (e.g. the AFDC export: State,2016,2017,...,2024)
+    total_vehicles.csv            — optional; same shape, total light-duty vehicles
+                                    per state. Used to compute K = fraction × total.
+                                    If absent, falls back to built-in 2024 estimates.
+ 
+Usage:
+    1. Set EV_CSV_PATH (and optionally TOTAL_CSV_PATH) near the top of main().
+    2. pip install numpy scipy pandas matplotlib
+    3. python ev_forecast.py
+ 
+Outputs:
+    ev_forecast_results.csv              — fitted params + forecasts per state/scenario
+    ev_forecast_{scenario}_2050.csv      — one per scenario; State x year (2016-2050),
+                                           historical values then fitted/forecast values;
+                                           same shape as the input CSV
+    ev_forecast_plots/                   — per-state charts (controlled by PLOT_STATES)
+    ev_forecast_national.png             — national aggregate chart
+"""
+ 
 import os
 import warnings
  
+import geopandas as gpd
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
+from matplotlib.colors import LogNorm
 import numpy as np
 import pandas as pd
 from scipy.optimize import OptimizeWarning, curve_fit
@@ -32,6 +52,11 @@ K_SCENARIOS = {
 # State-level plots: list of state names, True for all, False to skip.
 PLOT_STATES = ["California", "Texas", "Florida", "New York", "Washington"]
 PLOT_NATIONAL = True
+ 
+# State choropleth maps: years and shapefile path
+MAP_YEARS     = [2031, 2040, 2050]
+SHAPEFILE_PATH = "cb_2021_us_county_20m.shp"  # same file used in county_charger_weights.py
+PLOT_MAPS     = True
  
 OUTPUT_DIR = "ev_forecast_plots"
  
@@ -272,6 +297,165 @@ def plot_state(state, counts_hist, res, years_hist, forecast_years):
     print(f"  Saved {fname}")
  
  
+# ── State choropleth maps ────────────────────────────────────────────────────────
+ 
+# Full state name → 2-letter abbreviation, for joining to shapefile
+STATE_ABBREV = {
+    "Alabama": "AL", "Alaska": "AK", "Arizona": "AZ", "Arkansas": "AR",
+    "California": "CA", "Colorado": "CO", "Connecticut": "CT", "Delaware": "DE",
+    "District of Columbia": "DC", "Florida": "FL", "Georgia": "GA", "Hawaii": "HI",
+    "Idaho": "ID", "Illinois": "IL", "Indiana": "IN", "Iowa": "IA", "Kansas": "KS",
+    "Kentucky": "KY", "Louisiana": "LA", "Maine": "ME", "Maryland": "MD",
+    "Massachusetts": "MA", "Michigan": "MI", "Minnesota": "MN", "Mississippi": "MS",
+    "Missouri": "MO", "Montana": "MT", "Nebraska": "NE", "Nevada": "NV",
+    "New Hampshire": "NH", "New Jersey": "NJ", "New Mexico": "NM", "New York": "NY",
+    "North Carolina": "NC", "North Dakota": "ND", "Ohio": "OH", "Oklahoma": "OK",
+    "Oregon": "OR", "Pennsylvania": "PA", "Rhode Island": "RI",
+    "South Carolina": "SC", "South Dakota": "SD", "Tennessee": "TN", "Texas": "TX",
+    "Utah": "UT", "Vermont": "VT", "Virginia": "VA", "Washington": "WA",
+    "West Virginia": "WV", "Wisconsin": "WI", "Wyoming": "WY",
+}
+ 
+ 
+def plot_state_maps(all_results, shapefile_path, years=MAP_YEARS):
+    """
+    For each scenario, produce a 1×3 choropleth map of cumulative EV
+    registrations per state for each year in `years` (contiguous US only).
+    Output: ev_map_{scenario}.png
+    """
+    if not os.path.exists(shapefile_path):
+        print(f"  Shapefile not found at {shapefile_path} — skipping state maps.")
+        return
+ 
+    print("  Building state geometries from shapefile...")
+    counties = gpd.read_file(shapefile_path).to_crs("EPSG:5070")
+    # Exclude non-contiguous states and territories
+    non_conus = {"02", "15", "60", "66", "69", "72", "78"}
+    conus_counties = counties[~counties["STATEFP"].isin(non_conus)]
+    states_geo = conus_counties.dissolve(by="STUSPS").reset_index()[["STUSPS", "geometry"]]
+ 
+    for scenario in K_SCENARIOS:
+        data_rows = []
+        for state, counts, res in all_results:
+            sdata = res["scenarios"].get(scenario)
+            if not sdata:
+                continue
+            abbrev = STATE_ABBREV.get(state)
+            if not abbrev:
+                continue
+            for y in years:
+                data_rows.append({
+                    "STUSPS":   abbrev,
+                    "year":     y,
+                    "ev_count": sdata["forecast"].get(y, 0),
+                })
+ 
+        df = pd.DataFrame(data_rows)
+ 
+        # Shared log-scale colour bounds across all three years
+        all_vals = df[df["ev_count"] > 0]["ev_count"].values
+        vmin = max(all_vals.min(), 1)
+        vmax = all_vals.max()
+        norm = LogNorm(vmin=vmin, vmax=vmax)
+ 
+        fig, axes = plt.subplots(1, 3, figsize=(18, 5))
+ 
+        for ax, yr in zip(axes, years):
+            yr_df = df[df["year"] == yr]
+            merged = states_geo.merge(
+                yr_df[["STUSPS", "ev_count"]], on="STUSPS", how="left"
+            )
+            ax.axis("off")
+            # Grey fill for states with no data
+            merged.plot(ax=ax, color="#dddddd", edgecolor="white", linewidth=0.5)
+            merged[merged["ev_count"] > 0].plot(
+                ax=ax, column="ev_count", cmap="YlOrRd", norm=norm,
+                edgecolor="white", linewidth=0.5, legend=False,
+            )
+            ax.set_title(str(yr), fontsize=12)
+ 
+        # Shared colorbar
+        sm = plt.cm.ScalarMappable(cmap="YlOrRd", norm=norm)
+        sm.set_array([])
+        cbar_ax = fig.add_axes([0.25, 0.06, 0.50, 0.03])
+        cbar = fig.colorbar(sm, cax=cbar_ax, orientation="horizontal")
+        cbar.set_label("Cumulative EV registrations (log scale)", fontsize=10)
+ 
+        fig.suptitle(
+            f"Cumulative EV Registrations by State — {scenario.capitalize()} scenario",
+            fontsize=13,
+        )
+ 
+        out_path = f"ev_map_{scenario}.png"
+        plt.savefig(out_path, dpi=150, bbox_inches="tight", facecolor="white")
+        plt.close()
+        print(f"  Saved {out_path}")
+ 
+ 
+def plot_saturation_maps(all_results, shapefile_path, years=MAP_YEARS):
+    """
+    For each scenario, produce a 1×3 choropleth map of each state's EV fleet
+    as a percentage of its carrying capacity K (0–100%), contiguous US only.
+    Output: ev_map_saturation_{scenario}.png
+    """
+    if not os.path.exists(shapefile_path):
+        return
+ 
+    counties = gpd.read_file(shapefile_path).to_crs("EPSG:5070")
+    non_conus = {"02", "15", "60", "66", "69", "72", "78"}
+    states_geo = (counties[~counties["STATEFP"].isin(non_conus)]
+                  .dissolve(by="STUSPS").reset_index()[["STUSPS", "geometry"]])
+ 
+    for scenario in K_SCENARIOS:
+        data_rows = []
+        for state, counts, res in all_results:
+            sdata = res["scenarios"].get(scenario)
+            if not sdata or sdata["K"] == 0:
+                continue
+            abbrev = STATE_ABBREV.get(state)
+            if not abbrev:
+                continue
+            for y in years:
+                pct = sdata["forecast"].get(y, 0) / sdata["K"] * 100
+                data_rows.append({"STUSPS": abbrev, "year": y, "pct_k": pct})
+ 
+        df = pd.DataFrame(data_rows)
+ 
+        # Linear 0–100 scale, shared across all years
+        norm = plt.Normalize(vmin=0, vmax=100)
+ 
+        fig, axes = plt.subplots(1, 3, figsize=(18, 5))
+ 
+        for ax, yr in zip(axes, years):
+            yr_df = df[df["year"] == yr]
+            merged = states_geo.merge(
+                yr_df[["STUSPS", "pct_k"]], on="STUSPS", how="left"
+            )
+            ax.axis("off")
+            merged.plot(ax=ax, color="#dddddd", edgecolor="white", linewidth=0.5)
+            merged[merged["pct_k"].notna()].plot(
+                ax=ax, column="pct_k", cmap="YlOrRd", norm=norm,
+                edgecolor="white", linewidth=0.5, legend=False,
+            )
+            ax.set_title(str(yr), fontsize=12)
+ 
+        sm = plt.cm.ScalarMappable(cmap="YlOrRd", norm=norm)
+        sm.set_array([])
+        cbar_ax = fig.add_axes([0.25, 0.06, 0.50, 0.03])
+        cbar = fig.colorbar(sm, cax=cbar_ax, orientation="horizontal")
+        cbar.set_label("EV fleet as % of carrying capacity (K)", fontsize=10)
+ 
+        fig.suptitle(
+            f"EV Fleet Saturation of Carrying Capacity — {scenario.capitalize()} scenario",
+            fontsize=13,
+        )
+ 
+        out_path = f"ev_map_saturation_{scenario}.png"
+        plt.savefig(out_path, dpi=150, bbox_inches="tight", facecolor="white")
+        plt.close()
+        print(f"  Saved {out_path}")
+ 
+ 
 # ── Main ────────────────────────────────────────────────────────────────────────
  
 def main():
@@ -354,6 +538,11 @@ def main():
         for state, counts, res in all_results:
             if state in states_to_plot:
                 plot_state(state, counts, res, years_hist, FORECAST_YEARS)
+ 
+    if PLOT_MAPS:
+        print("\nGenerating state choropleth maps...")
+        plot_state_maps(all_results, SHAPEFILE_PATH)
+        plot_saturation_maps(all_results, SHAPEFILE_PATH)
  
     # Summary
     print("\n── 2030 national forecast by scenario ──")
