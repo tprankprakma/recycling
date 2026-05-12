@@ -7,9 +7,8 @@ and projects forward under three carrying-capacity (K) scenarios.
 Inputs:
     ev_registrations.csv          — required; rows=states, columns=years + "State"
                                     (e.g. the AFDC export: State,2016,2017,...,2024)
-    total_vehicles.csv            — optional; same shape, total light-duty vehicles
-                                    per state. Used to compute K = fraction × total.
-                                    If absent, falls back to built-in 2024 estimates.
+    total_vehicles.csv            — required; rows=states, columns=years + "State"
+                                    (e.g. the AFDC export: State,2016,2017,...,2024)
  
 Usage:
     1. Set EV_CSV_PATH (and optionally TOTAL_CSV_PATH) near the top of main().
@@ -59,29 +58,7 @@ SHAPEFILE_PATH = "cb_2021_us_county_20m.shp"  # same file used in county_charger
 PLOT_MAPS     = True
  
 OUTPUT_DIR = "ev_forecast_plots"
- 
-# Fallback total light-duty vehicle registrations per state (2024, AFDC).
-# Only used when --total CSV is not supplied.
-TOTAL_VEHICLES_FALLBACK = {
-    "Alabama": 4_884_400, "Alaska": 570_600, "Arizona": 6_587_200,
-    "Arkansas": 2_736_700, "California": 37_421_700, "Colorado": 5_497_100,
-    "Connecticut": 3_023_700, "Delaware": 919_000, "District of Columbia": 308_100,
-    "Florida": 18_741_500, "Georgia": 9_702_400, "Hawaii": 1_081_100,
-    "Idaho": 2_019_900, "Illinois": 10_124_700, "Indiana": 6_214_400,
-    "Iowa": 3_178_900, "Kansas": 2_652_900, "Kentucky": 3_989_200,
-    "Louisiana": 3_781_400, "Maine": 1_247_000, "Maryland": 5_031_000,
-    "Massachusetts": 5_540_700, "Michigan": 8_581_600, "Minnesota": 5_185_400,
-    "Mississippi": 2_725_900, "Missouri": 5_726_700, "Montana": 1_038_800,
-    "Nebraska": 1_986_400, "Nevada": 2_607_600, "New Hampshire": 1_400_600,
-    "New Jersey": 7_426_300, "New Mexico": 1_955_900, "New York": 11_328_500,
-    "North Carolina": 9_180_700, "North Dakota": 806_900, "Ohio": 10_390_200,
-    "Oklahoma": 4_242_600, "Oregon": 3_850_800, "Pennsylvania": 10_245_600,
-    "Rhode Island": 872_800, "South Carolina": 5_114_000, "South Dakota": 979_900,
-    "Tennessee": 6_599_000, "Texas": 26_154_400, "Utah": 3_140_100,
-    "Vermont": 587_200, "Virginia": 7_816_800, "Washington": 6_830_800,
-    "West Virginia": 1_520_900, "Wisconsin": 5_569_800, "Wyoming": 667_200,
-}
- 
+
  
 # ── Data loading ────────────────────────────────────────────────────────────────
  
@@ -460,23 +437,16 @@ def plot_saturation_maps(all_results, shapefile_path, years=MAP_YEARS):
  
 def main():
     # ── Input file paths — edit these to point to your files ──────────────────
-    EV_CSV_PATH    = "data/ev_clean/ev_registrations_historical.csv"   # required: State + year columns
-    TOTAL_CSV_PATH = None                      # optional: same shape; None to use fallback
+    EV_CSV_PATH    = "data/veh_reg_clean/ev_registrations.csv"   # required: State + year columns
+    TOTAL_CSV_PATH = "data/veh_reg_clean/total_vehicles.csv"   # required: same shape
     # ─────────────────────────────────────────────────────────────────────────
  
     # Load EV data
     print(f"Loading EV registrations from: {EV_CSV_PATH}")
     ev_data, years_hist = load_registrations(EV_CSV_PATH)
     print(f"  {len(ev_data)} states/regions, years {years_hist[0]}–{years_hist[-1]}")
- 
-    # Load or fall back to total vehicles
-    if TOTAL_CSV_PATH:
-        print(f"Loading total vehicles from: {TOTAL_CSV_PATH}")
-        total_vehicles = load_total_vehicles(TOTAL_CSV_PATH)
-    else:
-        print("No TOTAL_CSV_PATH set; using built-in 2024 estimates.")
-        total_vehicles = TOTAL_VEHICLES_FALLBACK
- 
+    total_vehicles = load_total_vehicles(TOTAL_CSV_PATH)
+    
     # Fit and forecast per state
     all_results = []
     for state, counts in ev_data.items():
